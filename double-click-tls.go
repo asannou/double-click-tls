@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -14,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 var directoryURL = "https://acme-v01.api.letsencrypt.org/directory"
@@ -28,18 +30,18 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to create client:", err)
 	}
-	accountKey, err := loadAccountKeyFile("accountkey.pem")
+	accountKey, err := readKeyFile("account")
 	if err != nil {
 		accountKey, err = rsa.GenerateKey(rand.Reader, 4096)
 		if err != nil {
 			log.Fatal(err)
 		}
-		writeKeyFile("accountkey.pem", accountKey)
+		writeKeyFile("account", accountKey)
 	}
 	if _, err := cli.NewRegistration(accountKey); err != nil {
 		log.Fatal("new registration failed:", err)
 	}
-	domain := os.Args[1]
+	domain := readLine("Enter domain: ")
 	auth, _, err := cli.NewAuthorization(accountKey, "dns", domain)
 	if err != nil {
 		log.Fatal(err)
@@ -49,7 +51,7 @@ func main() {
 		log.Fatal("no supported challenge combinations")
 	}
 	chal := chals[0][0]
-	listenHTTP(accountKey, chal)
+	serveHTTP(accountKey, chal)
 	if err := cli.ChallengeReady(accountKey, chal); err != nil {
 		log.Fatal(err)
 	}
@@ -61,11 +63,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	writeKeyFile(fmt.Sprintf("%s.key.pem", domain), certKey)
-	writeCertificateFile(fmt.Sprintf("%s.cert.pem", domain), cert)
+	writeKeyFile(domain, certKey)
+	writeCertificateFile(domain, cert)
 }
 
-func loadAccountKeyFile(filename string) (*rsa.PrivateKey, error) {
+func readLine(prompt string) string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print(prompt)
+	line, _ := reader.ReadString('\n')
+	return strings.TrimSpace(line)
+}
+
+func readKeyFile(name string) (*rsa.PrivateKey, error) {
+	filename := fmt.Sprintf("%s.key.pem", name)
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -85,11 +95,13 @@ func writePEMFile(filename string, perm os.FileMode, t string, b []byte) {
 	}
 }
 
-func writeKeyFile(filename string, key *rsa.PrivateKey) {
+func writeKeyFile(name string, key *rsa.PrivateKey) {
+	filename := fmt.Sprintf("%s.key.pem", name)
 	writePEMFile(filename, 0400, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key))
 }
 
-func writeCertificateFile(filename string, cert *letsencrypt.CertificateResponse) {
+func writeCertificateFile(domain string, cert *letsencrypt.CertificateResponse) {
+	filename := fmt.Sprintf("%s.cert.pem", domain)
 	writePEMFile(filename, 0644, "CERTIFICATE", cert.Certificate.Raw)
 }
 
@@ -116,7 +128,7 @@ func newCSR(domain string) (*x509.CertificateRequest, *rsa.PrivateKey, error) {
 	return csr, certKey, nil
 }
 
-func listenHTTP(accountKey interface{}, chal letsencrypt.Challenge) {
+func serveHTTP(accountKey interface{}, chal letsencrypt.Challenge) {
 	if chal.Type != letsencrypt.ChallengeHTTP {
 		log.Fatal("this isn't an HTTP challenge!")
 	}
