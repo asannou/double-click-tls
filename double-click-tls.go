@@ -7,6 +7,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"github.com/ericchiang/letsencrypt"
 	"io"
 	"io/ioutil"
@@ -60,8 +61,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	writeKeyFile("key.pem", certKey)
-	writeCertificateFile("cert.pem", cert)
+	writeKeyFile(fmt.Sprintf("%s.key.pem", domain), certKey)
+	writeCertificateFile(fmt.Sprintf("%s.cert.pem", domain), cert)
 }
 
 func loadAccountKeyFile(filename string) (*rsa.PrivateKey, error) {
@@ -76,7 +77,7 @@ func loadAccountKeyFile(filename string) (*rsa.PrivateKey, error) {
 	return x509.ParsePKCS1PrivateKey(block.Bytes)
 }
 
-func writePEM(filename string, perm os.FileMode, t string, b []byte) {
+func writePEMFile(filename string, perm os.FileMode, t string, b []byte) {
 	data := pem.EncodeToMemory(&pem.Block{Type: t, Bytes: b})
 	err := ioutil.WriteFile(filename, data, perm)
 	if err != nil {
@@ -85,11 +86,11 @@ func writePEM(filename string, perm os.FileMode, t string, b []byte) {
 }
 
 func writeKeyFile(filename string, key *rsa.PrivateKey) {
-	writePEM(filename, 0400, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key))
+	writePEMFile(filename, 0400, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key))
 }
 
 func writeCertificateFile(filename string, cert *letsencrypt.CertificateResponse) {
-	writePEM(filename, 0644, "CERTIFICATE", cert.Certificate.Raw)
+	writePEMFile(filename, 0644, "CERTIFICATE", cert.Certificate.Raw)
 }
 
 func newCSR(domain string) (*x509.CertificateRequest, *rsa.PrivateKey, error) {
