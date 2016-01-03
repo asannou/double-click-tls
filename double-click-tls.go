@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-  "time"
 )
 
 var directoryURL = "https://acme-v01.api.letsencrypt.org/directory"
@@ -53,7 +52,6 @@ func main() {
 	}
 	chal := chals[0][0]
 	serveHTTP(accountKey, chal)
-  time.Sleep(100 * time.Second)
 	if err := cli.ChallengeReady(accountKey, chal); err != nil {
 		log.Fatal(err)
 	}
