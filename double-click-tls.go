@@ -36,6 +36,7 @@ func main() {
 	}
 	accountKey, err := readKeyFile("account")
 	if err != nil {
+		log.Println(err)
 		accountKey, err = rsa.GenerateKey(rand.Reader, keyBits)
 		if err != nil {
 			log.Fatal(err)
