@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -20,7 +21,8 @@ import (
 )
 
 const directoryURL = "https://acme-v01.api.letsencrypt.org/directory"
-const bits = 4096
+const keyBits = 4096
+const ifconfigURL = "http://ifconfig.co"
 
 var supportedChallenges = []string{
 	letsencrypt.ChallengeHTTP,
@@ -34,7 +36,7 @@ func main() {
 	}
 	accountKey, err := readKeyFile("account")
 	if err != nil {
-		accountKey, err = rsa.GenerateKey(rand.Reader, bits)
+		accountKey, err = rsa.GenerateKey(rand.Reader, keyBits)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -47,6 +49,9 @@ func main() {
 	line := strings.Split(readLine("Enter domain: "), ":")
 	domain := line[0]
 	port := 80
+	if domain == "" {
+		domain = lookupDomain()
+	}
 	if len(line) > 1 {
 		port, err = strconv.Atoi(line[1])
 		if err != nil {
@@ -71,7 +76,6 @@ func main() {
 	if err := cli.ChallengeReady(accountKey, chal); err != nil {
 		log.Fatal(err)
 	}
-	log.Println("new csr")
 	csr, certKey, err := newCSR(domain)
 	if err != nil {
 		log.Fatal(err)
@@ -92,9 +96,32 @@ func readLine(prompt string) string {
 	return strings.TrimSpace(line)
 }
 
+func lookupDomain() string {
+	req, _ := http.NewRequest("GET", ifconfigURL, nil)
+	req.Header.Set("User-Agent", "curl/7.40.0")
+	client := new(http.Client)
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	addr := strings.TrimSpace(string(b))
+	names, err := net.LookupAddr(addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	domain := strings.TrimRight(names[0], ".")
+	log.Println("domain:", domain)
+	return domain
+}
+
 func readKeyFile(name string) (*rsa.PrivateKey, error) {
 	filename := fmt.Sprintf("%s.key.pem", name)
-	log.Printf("reading %s", filename)
+	log.Println("reading", filename)
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -108,7 +135,7 @@ func readKeyFile(name string) (*rsa.PrivateKey, error) {
 
 func writePEMFile(filename string, perm os.FileMode, t string, b []byte) {
 	data := pem.EncodeToMemory(&pem.Block{Type: t, Bytes: b})
-	log.Printf("writing %s", filename)
+	log.Println("writing", filename)
 	err := ioutil.WriteFile(filename, data, perm)
 	if err != nil {
 		log.Fatal(err)
@@ -126,7 +153,7 @@ func writeCertificateFile(domain string, cert *letsencrypt.CertificateResponse) 
 }
 
 func newCSR(domain string) (*x509.CertificateRequest, *rsa.PrivateKey, error) {
-	certKey, err := rsa.GenerateKey(rand.Reader, bits)
+	certKey, err := rsa.GenerateKey(rand.Reader, keyBits)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -137,6 +164,7 @@ func newCSR(domain string) (*x509.CertificateRequest, *rsa.PrivateKey, error) {
 		Subject:            pkix.Name{CommonName: domain},
 		DNSNames:           []string{domain},
 	}
+	log.Println("create certificate request")
 	csrDER, err := x509.CreateCertificateRequest(rand.Reader, template, certKey)
 	if err != nil {
 		return nil, nil, err
@@ -165,7 +193,7 @@ func serveHTTP(accountKey interface{}, chal letsencrypt.Challenge, port int) {
 			io.WriteString(w, resource)
 		}
 		addr := fmt.Sprintf(":%d", port)
-		log.Printf("listening %s", addr)
+		log.Println("listening", addr)
 		log.Fatal(http.ListenAndServe(addr, http.HandlerFunc(hf)))
 	}()
 }
